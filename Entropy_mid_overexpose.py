@@ -58,8 +58,9 @@ def overexposure_score_entropy_only(ref_frame, intensity_thresh=0.9, entropy_thr
 def compare_exposure_entropy_ratio(sht_img, mid_img, entropy_thresh=2.0, radius=5, eps=1e-6):
     def low_entropy_ratio(img): return np.sum(entropy(img_as_ubyte(rgb2gray(img)), disk(radius)) < entropy_thresh) / img.shape[0] / img.shape[1]
     low_entropy_sht = low_entropy_ratio(sht_img)
-    low_entropy_mid = low_entropy_ratio(mid_img)
-    return low_entropy_mid / (low_entropy_sht + eps), low_entropy_mid, low_entropy_sht
+    raw_ratio = low_entropy_mid / (low_entropy_sht + eps)
+    ratio_score = np.log1p(raw_ratio)  # Option A: log-scale for stability
+    return ratio_score, low_entropy_mid, low_entropy_sht
 
 def final_overexposure_score(mid_frame, sht_frame, entropy_thresh_mask=0.4, intensity_thresh=0.9, kernel_size_mask=5, entropy_thresh_ratio=2.0, radius_ratio=7, weight_mask=0.6, weight_ratio=0.4):
     mask_score, overexposed_mask, entropy_map = overexposure_score_entropy_only(mid_frame, intensity_thresh, entropy_thresh_mask, kernel_size_mask)
