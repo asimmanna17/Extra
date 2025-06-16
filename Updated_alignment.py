@@ -227,6 +227,44 @@ class MultiCrossAlign_head_atttrans_res1sepalign(nn.Module):
         refined_x1 = self.deform_conv1(aligned_x1, offset1) + x1
         refined_x3 = self.deform_conv3(aligned_x3, offset3) + x3
         return [refined_x1, x2, refined_x3, x1, x3]
+class MultiCrossAlign_head_atttrans_res1sepalign(nn.Module):
+    def __init__(self, in_c=8, num_heads=4, dim_align=64):
+        super().__init__()
+        self.conv_f1 = nn.Conv2d(in_c, dim_align, 3, 1, 1)
+        self.conv_f2 = nn.Conv2d(in_c, dim_align, 3, 1, 1)
+        self.conv_f3 = nn.Conv2d(in_c, dim_align, 3, 1, 1)
+        self.pyramid1 = Pyramid(dim_align, dim_align)
+        self.pyramid2 = Pyramid(dim_align, dim_align)
+        self.pyramid3 = Pyramid(dim_align, dim_align)
+        self.align1 = Pyramid_CrossattAlign_Atttrans(scales=3, num_feats=dim_align, num_heads=num_heads, window_size=8)
+        self.align2 = Pyramid_CrossattAlign_Atttrans(scales=3, num_feats=dim_align, num_heads=num_heads, window_size=8)
+        self.offset_conv1 = nn.Conv2d(dim_align, 18, 3, padding=1)
+        self.offset_conv3 = nn.Conv2d(dim_align, 18, 3, padding=1)
+        self.deform_conv1 = DeformConv2d(dim_align, dim_align, 3, padding=1)
+        self.deform_conv3 = DeformConv2d(dim_align, dim_align, 3, padding=1)
+        self.laplacian_filter = nn.Conv2d(dim_align, dim_align, 3, padding=1, bias=False, groups=dim_align)
+        lap_kernel = torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32)
+        lap_kernel = lap_kernel.view(1, 1, 3, 3).repeat(dim_align, 1, 1, 1)
+        self.laplacian_filter.weight.data = lap_kernel
+        self.laplacian_filter.weight.requires_grad = False
+
+    def forward(self, x1, x2, x3):
+        x1 = self.conv_f1(x1)
+        x2 = self.conv_f2(x2)
+        x3 = self.conv_f3(x3)
+        x1_feats = self.pyramid1(x1)
+        x2_feats = self.pyramid2(x2)
+        x3_feats = self.pyramid3(x3)
+        aligned_x1 = self.align1(x2_feats, x1_feats, patch_ratio_list=[2, 2, 2])
+        aligned_x3 = self.align2(x2_feats, x3_feats, patch_ratio_list=[2, 2, 2])
+        offset1 = self.offset_conv1(aligned_x1)
+        offset3 = self.offset_conv3(aligned_x3)
+        lap_x2 = self.laplacian_filter(x2)
+        if lap_x2.shape[-2:] != aligned_x1.shape[-2:]:
+            lap_x2 = F.interpolate(lap_x2, size=aligned_x1.shape[-2:], mode='bilinear', align_corners=False)
+        refined_x1 = self.deform_conv1(aligned_x1, offset1) + lap_x2
+        refined_x3 = self.deform_conv3(aligned_x3, offset3) + lap_x2
+        return [refined_x1, x2, refined_x3, x1, x3]
 
 if __name__ == "__main__":
     # Define dummy input: Batch size 2, 8 channels, 128x128 resolution
