@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from mamba_ssm.modules.mamba_simple import Mamba
 
 # Squeeze-and-Excitation Block
 class SEBlock(nn.Module):
@@ -47,22 +46,34 @@ class RRDB(nn.Module):
         out = self.reduce(self.dense_block(x))
         return x + 0.2 * out
 
-# Mamba Block adapted for 2D spatial data
+# Simple Mamba-like Block from scratch
 class MambaBlock2D(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.norm = nn.LayerNorm(dim)
-        self.mamba = Mamba(dim)
+        self.proj_in = nn.Linear(dim, dim * 2)
+        self.activation = nn.GELU()
+        self.conv1 = nn.Conv1d(dim, dim, kernel_size=3, padding=1, groups=dim)
+        self.conv2 = nn.Conv1d(dim, dim, kernel_size=3, padding=1, groups=dim)
+        self.proj_out = nn.Linear(dim, dim)
 
     def forward(self, x):
         B, C, H, W = x.shape
         x = x.permute(0, 2, 3, 1).reshape(B, H * W, C)  # (B, N, C)
         x = self.norm(x)
-        x = self.mamba(x)
+        x = self.proj_in(x)
+        x = self.activation(x)
+
+        x = x.permute(0, 2, 1)  # (B, C, N)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = x.permute(0, 2, 1)  # (B, N, C)
+
+        x = self.proj_out(x)
         x = x.reshape(B, H, W, C).permute(0, 3, 1, 2)
         return x
 
-# Final HDR Refinement Network with Mamba
+# Final HDR Refinement Network with custom Mamba block
 class MambaHDRRefineNet(nn.Module):
     def __init__(self, in_channels=60, feat_channels=128, num_blocks=4):
         super().__init__()
