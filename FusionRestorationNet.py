@@ -99,3 +99,4 @@ class FusionRestorationNet(nn.Module):
         x = self.cnrdb_blocks(x)
         x = self.tail(x)
         return x
+
